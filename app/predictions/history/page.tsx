@@ -15,8 +15,10 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from '@/context/auth-context';
 import { api } from '@/lib/api';
-import { Search, Copy } from "lucide-react";
+import { Search, Copy, Download } from "lucide-react";
 import { useRouter, useSearchParams } from 'next/navigation';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import * as XLSX from 'xlsx';
 
 interface PredictionResults {
   input_data: Record<string, any>;
@@ -54,6 +56,11 @@ export default function PredictionHistoryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [recentPredictions, setRecentPredictions] = useState<{id: string, timestamp: string, rockType: string, customId?: boolean}[]>([]);
+  
+  // Add this to your state
+  const [userSettings, setUserSettings] = useState({
+    dataExportFormat: 'json' // Default
+  });
   
   // Extract the API fetch into a separate function so we can call it from useEffect
   const handleFetch = useCallback(async (id: string) => {
@@ -108,6 +115,24 @@ export default function PredictionHistoryPage() {
     setRecentPredictions(savedPredictions);
   }, [searchParams, handleFetch]); // Add handleFetch as dependency
   
+  // Add this effect to fetch user settings
+  useEffect(() => {
+    const fetchUserSettings = async () => {
+      if (!token) return;
+      
+      try {
+        const settings = await api.get('/api/settings');
+        if (settings && settings.dataExportFormat) {
+          setUserSettings(settings);
+        }
+      } catch (error) {
+        console.error('Error fetching user settings:', error);
+      }
+    };
+    
+    fetchUserSettings();
+  }, [token]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     handleFetch(predictionId);
@@ -119,6 +144,104 @@ export default function PredictionHistoryPage() {
       toast({
         title: "ID Copied",
         description: "Prediction ID copied to clipboard",
+      });
+    }
+  };
+
+  const exportData = (format: string) => {
+    if (!results) return;
+  
+    try {
+      const inputData = results.input_data || {};
+      const predictions = results.predictions || {};
+      
+      if (format === 'json') {
+        // Export as JSON
+        const jsonData = JSON.stringify({
+          input_data: inputData,
+          predictions
+        }, null, 2);
+        
+        // Create download link
+        const blob = new Blob([jsonData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `rock-prediction-${predictionId}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast({
+          title: 'Export Successful',
+          description: 'Data exported as JSON',
+        });
+      } 
+      else if (format === 'csv') {
+        // Flatten prediction data
+        const flatPredictions: Record<string, string> = {};
+        
+        Object.entries(predictions).forEach(([metric, models]) => {
+          Object.entries(models as Record<string, number>).forEach(([model, value]) => {
+            flatPredictions[`${metric} (${model})`] = value.toString();
+          });
+        });
+        
+        // Combine all data
+        const allData = { ...inputData, ...flatPredictions };
+        
+        // Create CSV content
+        const headers = Object.keys(allData).join(',');
+        const values = Object.values(allData).join(',');
+        const csvContent = `${headers}\n${values}`;
+        
+        // Create download link
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `rock-prediction-${predictionId}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast({
+          title: 'Export Successful',
+          description: 'Data exported as CSV',
+        });
+      }
+      else if (format === 'excel') {
+        // Flatten prediction data
+        const flatPredictions: Record<string, string | number> = {};
+        
+        Object.entries(predictions).forEach(([metric, models]) => {
+          Object.entries(models as Record<string, number>).forEach(([model, value]) => {
+            flatPredictions[`${metric} (${model})`] = value;
+          });
+        });
+        
+        // Combine all data 
+        const allData = { ...inputData, ...flatPredictions };
+        
+        // Create worksheet
+        const ws = XLSX.utils.json_to_sheet([allData]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Prediction");
+        
+        // Generate Excel file and download
+        XLSX.writeFile(wb, `rock-prediction-${predictionId}.xlsx`);
+        
+        toast({
+          title: 'Export Successful',
+          description: 'Data exported as Excel',
+        });
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: error instanceof Error ? error.message : 'An error occurred during export',
+        variant: 'destructive',
       });
     }
   };
@@ -245,6 +368,31 @@ export default function PredictionHistoryPage() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="flex justify-end mb-4">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline"
+                  onClick={() => exportData(userSettings.dataExportFormat)}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Data
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => exportData('json')}>
+                  Export as JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportData('csv')}>
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportData('excel')}>
+                  Export as Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           
           {/* Input Parameters Card */}
           <Card>
@@ -271,7 +419,27 @@ export default function PredictionHistoryPage() {
                       </TableHeader>
                       <TableBody>
                         {Object.entries(inputData)
-                          .filter(([key]) => !['_id', 'id'].includes(key)) // Filter out IDs
+                          .filter(([key]) => {
+                            // Fields to exclude from input parameters
+                            const excludedFields = [
+                              '_id', 
+                              'id',
+                              'Powder_Factor',
+                              'Powder_Factor (kg/m³)',
+                              'Fragmentation_Size (cm)',
+                              'Vibration_Level (dB)',
+                              'Noise_Level (dB)',
+                              'Blasting_Cost ($/tonne)'
+                            ];
+                            
+                            // Also exclude any key that contains "SVR", "XGBoost", or "RandomForest"
+                            const isPredictionModel = key.includes('SVR') || 
+                                                     key.includes('XGBoost') || 
+                                                     key.includes('RandomForest');
+                            
+                            // Return true to keep, false to filter out
+                            return !excludedFields.includes(key) && !isPredictionModel;
+                          })
                           .map(([key, value]) => (
                             <TableRow key={key}>
                               <TableCell className="font-medium">{key}</TableCell>
