@@ -15,10 +15,13 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from '@/context/auth-context';
 import { api } from '@/lib/api';
-import { Search, Copy, Download } from "lucide-react";
+import { Search, Copy, Download, Pencil, Trash } from "lucide-react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import * as XLSX from 'xlsx';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
 
 interface PredictionResults {
   input_data: Record<string, any>;
@@ -61,6 +64,12 @@ export default function PredictionHistoryPage() {
   const [userSettings, setUserSettings] = useState({
     dataExportFormat: 'json' // Default
   });
+  
+  // Add these to your state variables
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editFormData, setEditFormData] = useState<Record<string, any>>({});
+  const [editLoading, setEditLoading] = useState(false);
   
   // Extract the API fetch into a separate function so we can call it from useEffect
   const handleFetch = useCallback(async (id: string) => {
@@ -280,6 +289,94 @@ export default function PredictionHistoryPage() {
     }
   };
 
+  // Handle deletion of prediction
+  const handleDeletePrediction = async () => {
+    if (!predictionId) return;
+    
+    try {
+      await api.delete(`/api/data/${predictionId}`);
+      
+      // Remove from local storage if it exists there
+      const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
+      const updatedPredictions = savedPredictions.filter(
+        (prediction: {id: string}) => prediction.id !== predictionId
+      );
+      localStorage.setItem('predictions', JSON.stringify(updatedPredictions));
+      
+      // Update the state
+      setRecentPredictions(updatedPredictions);
+      setResults(null);
+      setPredictionId('');
+      
+      toast({
+        title: 'Prediction Deleted',
+        description: 'The prediction has been permanently deleted',
+      });
+    } catch (error) {
+      console.error('Error deleting prediction:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete prediction',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Initialize the edit form with current data
+  const handleEditPrediction = () => {
+    if (!results) return;
+    
+    const inputData = results.input_data || results;
+    setEditFormData({...inputData});
+    setShowEditDialog(true);
+  };
+
+  // Save edited data and recalculate predictions
+  const handleSaveEdit = async () => {
+    if (!predictionId) return;
+    
+    setEditLoading(true);
+    
+    try {
+      // Send the updated data to the backend
+      const response = await api.put(`/api/data/${predictionId}`, {
+        ...editFormData,
+        id: predictionId
+      });
+      
+      // Update local data
+      setResults(response);
+      setShowEditDialog(false);
+      
+      // Update recent predictions list if the rock type changed
+      if (response.input_data?.Rock_Type) {
+        const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
+        const updatedPredictions = savedPredictions.map(
+          (prediction: {id: string, rockType: string}) => 
+            prediction.id === predictionId 
+              ? {...prediction, rockType: response.input_data.Rock_Type} 
+              : prediction
+        );
+        localStorage.setItem('predictions', JSON.stringify(updatedPredictions));
+        setRecentPredictions(updatedPredictions);
+      }
+      
+      toast({
+        title: 'Update Successful',
+        description: 'Prediction data updated and recalculated',
+      });
+    } catch (error) {
+      console.error('Error updating prediction:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update and recalculate prediction',
+        variant: 'destructive',
+      });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // Protect the route
   if (!user) {
     return (
@@ -386,14 +483,32 @@ export default function PredictionHistoryPage() {
             <CardHeader>
               <CardTitle className="flex justify-between items-center">
                 <span>Prediction ID</span>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={copyIdToClipboard}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy ID
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleEditPrediction()}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={copyIdToClipboard}
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy ID
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -584,6 +699,77 @@ export default function PredictionHistoryPage() {
           </Card>
         </div>
       )}
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this prediction and its data from the database.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeletePrediction}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Prediction Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Prediction Parameters</DialogTitle>
+            <DialogDescription>
+              Update parameters and recalculate prediction results.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 my-4">
+            {Object.entries(editFormData).map(([key, value]) => {
+              // Skip certain fields that shouldn't be editable
+              const nonEditableFields = ['_id', 'id', 'created_at', 'updated_at'];
+              if (nonEditableFields.includes(key)) return null;
+              
+              // Skip prediction model fields
+              if (key.includes('SVR') || key.includes('XGBoost') || key.includes('RandomForest')) return null;
+              
+              return (
+                <div key={key} className="grid grid-cols-3 gap-4 items-center">
+                  <Label htmlFor={key} className="text-right">{key}</Label>
+                  <Input
+                    id={key}
+                    className="col-span-2"
+                    value={value}
+                    onChange={(e) => {
+                      setEditFormData({
+                        ...editFormData,
+                        [key]: e.target.value
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          
+          <DialogFooter>
+            <Button onClick={() => setShowEditDialog(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={editLoading}>
+              {editLoading ? 'Saving...' : 'Save & Recalculate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

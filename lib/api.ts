@@ -70,7 +70,7 @@ export const api = {
       const response = await fetchWithAuth(`/api/data/${id}`);
       console.log('API response for prediction:', response);
       return response;
-    } catch (error: unknown) {
+    } catch (error: unknown) {  
       console.error(`Error fetching prediction ${id}:`, error);
       throw error;
     }
