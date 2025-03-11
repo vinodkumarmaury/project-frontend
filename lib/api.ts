@@ -62,4 +62,17 @@ export const api = {
     fetchWithAuth(endpoint, {
       method: 'DELETE',
     }),
+
+  // Specific method for fetching prediction data
+  getPredictionById: async (id: string) => {
+    try {
+      console.log(`Fetching prediction with ID: ${id}`);
+      const response = await fetchWithAuth(`/api/data/${id}`);
+      console.log('API response for prediction:', response);
+      return response;
+    } catch (error: unknown) {
+      console.error(`Error fetching prediction ${id}:`, error);
+      throw error;
+    }
+  }
 };

@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Copy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -49,6 +51,7 @@ export default function PredictionsPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<PredictionResults | null>(null);
+  const [predictionId, setPredictionId] = useState<string | null>(null); // Store the current prediction ID
   const { user, token } = useAuth();
   const router = useRouter();
 
@@ -124,9 +127,14 @@ export default function PredictionsPage() {
       const form = e.target as HTMLFormElement;
       const formData = new FormData(form);
       
-      // Transform form data to match API expectations
+      // Use custom ID if provided, otherwise generate a random one
+      const customId = formData.get('custom_id') as string;
+      const idToUse = customId && customId.trim() ? customId.trim() : uuidv4();
+      setPredictionId(idToUse);
+      
+      // Use this ID in the requestData
       const requestData = {
-        id: uuidv4(),
+        id: idToUse,
         Rock_Type: formData.get('Rock_Type') || '',
         "Rock_Density (kg/m³)": parseFloat(formData.get('Rock_Density') as string) || 0,
         "UCS (MPa)": parseFloat(formData.get('UCS') as string) || 0,
@@ -162,6 +170,18 @@ export default function PredictionsPage() {
 
       const result = await api.post('/api/predict', requestData);
       setResults(result.result);
+      
+      // Store prediction ID in localStorage
+      const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
+      savedPredictions.unshift({
+        id: idToUse,
+        timestamp: new Date().toISOString(),
+        rockType: formData.get('Rock_Type') || '',
+        customId: customId && customId.trim() ? true : false
+      });
+      // Keep only the last 10 predictions
+      localStorage.setItem('predictions', JSON.stringify(savedPredictions.slice(0, 10)));
+      
       toast({
         title: 'Success',
         description: 'Prediction completed successfully',
@@ -177,6 +197,17 @@ export default function PredictionsPage() {
       setLoading(false);
     }
   };
+
+  // Add a function to copy ID to clipboard
+  const copyIdToClipboard = useCallback(() => {
+    if (predictionId) {
+      navigator.clipboard.writeText(predictionId);
+      toast({
+        title: "ID Copied",
+        description: "Prediction ID copied to clipboard",
+      });
+    }
+  }, [predictionId, toast]);
 
   if (!user) {
     return (
@@ -202,6 +233,23 @@ export default function PredictionsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Prediction Reference */}
+              <div className="space-y-4">
+                <h3 className="font-semibold">Prediction Reference</h3>
+                <div className="space-y-2">
+                  <label htmlFor="custom-id">Custom ID (optional)</label>
+                  <Input 
+                    id="custom-id" 
+                    name="custom_id" 
+                    placeholder="Enter a memorable ID (e.g., site1-test2)" 
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    You can provide your own ID to easily retrieve this prediction later.
+                    If left empty, a random ID will be generated.
+                  </p>
+                </div>
+              </div>
+
               {/* Rock Properties */}
               <div className="space-y-4">
                 <h3 className="font-semibold">Rock Properties</h3>
@@ -430,6 +478,37 @@ export default function PredictionsPage() {
             )}
           </CardContent>
         </Card>
+
+        {predictionId && results && (
+          <Card className="col-span-2 mt-6">
+            <CardHeader>
+              <CardTitle>Prediction ID Reference</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-muted p-4 rounded-md mb-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-mono text-sm break-all">{predictionId}</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={copyIdToClipboard}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy ID
+                  </Button>
+                </div>
+              </div>
+              <p className="text-muted-foreground mb-4">
+                Save this ID to retrieve your prediction details in the future from the history page.
+              </p>
+              <Link href={`/predictions/history?id=${predictionId}`}>
+                <Button variant="outline" className="w-full">
+                  View in History Page
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
