@@ -148,7 +148,8 @@ export default function PredictionHistoryPage() {
     }
   };
 
-  const exportData = (format: string) => {
+  // Update the export function to add 'type' parameter
+  const exportData = (format: string, type: 'all' | 'inputs' | 'predictions' = 'all') => {
     if (!results) return;
   
     try {
@@ -156,25 +157,34 @@ export default function PredictionHistoryPage() {
       const predictions = results.predictions || {};
       
       if (format === 'json') {
-        // Export as JSON
-        const jsonData = JSON.stringify({
-          input_data: inputData,
-          predictions
-        }, null, 2);
+        // Export as JSON based on type
+        let jsonData;
+        let filename;
+        
+        if (type === 'all') {
+          jsonData = JSON.stringify({ input_data: inputData, predictions }, null, 2);
+          filename = `rock-prediction-${predictionId}.json`;
+        } else if (type === 'inputs') {
+          jsonData = JSON.stringify({ input_data: inputData }, null, 2);
+          filename = `rock-inputs-${predictionId}.json`;
+        } else {
+          jsonData = JSON.stringify({ predictions }, null, 2);
+          filename = `rock-results-${predictionId}.json`;
+        }
         
         // Create download link
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `rock-prediction-${predictionId}.json`;
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
         toast({
           title: 'Export Successful',
-          description: 'Data exported as JSON',
+          description: `Data exported as JSON (${type})`,
         });
       } 
       else if (format === 'csv') {
@@ -187,8 +197,20 @@ export default function PredictionHistoryPage() {
           });
         });
         
-        // Combine all data
-        const allData = { ...inputData, ...flatPredictions };
+        // Determine which data to export based on type
+        let allData;
+        let filename;
+        
+        if (type === 'all') {
+          allData = { ...inputData, ...flatPredictions };
+          filename = `rock-prediction-${predictionId}.csv`;
+        } else if (type === 'inputs') {
+          allData = { ...inputData };
+          filename = `rock-inputs-${predictionId}.csv`;
+        } else {
+          allData = { ...flatPredictions };
+          filename = `rock-results-${predictionId}.csv`;
+        }
         
         // Create CSV content
         const headers = Object.keys(allData).join(',');
@@ -200,14 +222,14 @@ export default function PredictionHistoryPage() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `rock-prediction-${predictionId}.csv`;
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
         toast({
           title: 'Export Successful',
-          description: 'Data exported as CSV',
+          description: `Data exported as CSV (${type})`,
         });
       }
       else if (format === 'excel') {
@@ -220,8 +242,20 @@ export default function PredictionHistoryPage() {
           });
         });
         
-        // Combine all data 
-        const allData = { ...inputData, ...flatPredictions };
+        // Determine which data to export based on type
+        let allData;
+        let filename;
+        
+        if (type === 'all') {
+          allData = { ...inputData, ...flatPredictions };
+          filename = `rock-prediction-${predictionId}.xlsx`;
+        } else if (type === 'inputs') {
+          allData = { ...inputData };
+          filename = `rock-inputs-${predictionId}.xlsx`;
+        } else {
+          allData = { ...flatPredictions };
+          filename = `rock-results-${predictionId}.xlsx`;
+        }
         
         // Create worksheet
         const ws = XLSX.utils.json_to_sheet([allData]);
@@ -229,11 +263,11 @@ export default function PredictionHistoryPage() {
         XLSX.utils.book_append_sheet(wb, ws, "Prediction");
         
         // Generate Excel file and download
-        XLSX.writeFile(wb, `rock-prediction-${predictionId}.xlsx`);
+        XLSX.writeFile(wb, filename);
         
         toast({
           title: 'Export Successful',
-          description: 'Data exported as Excel',
+          description: `Data exported as Excel (${type})`,
         });
       }
     } catch (error) {

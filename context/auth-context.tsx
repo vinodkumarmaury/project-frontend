@@ -66,35 +66,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signup = async (username: string, email: string, password: string) => {
-    setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/signup', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ username, email, password }),
       });
       
+      // First check if the response is not ok
       if (!response.ok) {
-        throw new Error('Signup failed');
+        const errorData = await response.json();
+        // Throw the specific error message from the backend
+        throw new Error(errorData.detail || 'Registration failed');
       }
       
       const data = await response.json();
       
-      // Save token
+      // Set auth token and user info
       localStorage.setItem('token', data.access_token);
       setToken(data.access_token);
+      setUser({ username, email });
       
-      // Set basic user info
-      const newUser = { username, email };
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      
-      router.push('/');
+      return data;
     } catch (error) {
       console.error('Signup error:', error);
+      // Re-throw the error to be caught by the component
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 

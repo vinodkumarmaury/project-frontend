@@ -8,6 +8,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/auth-context';
 
+const checkEmailAvailability = async (email: string) => {
+  try {
+    console.log("Checking email availability for:", email);
+    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/check-email?email=${encodeURIComponent(email)}`;
+    console.log("API URL:", apiUrl);
+    
+    const response = await fetch(apiUrl);
+    console.log("Response status:", response.status);
+    
+    const data = await response.json();
+    console.log("Response data:", data);
+    
+    return data.available;
+  } catch (error) {
+    console.error('Error checking email:', error);
+    // Don't assume available - better to let the user proceed and let the actual signup fail if needed
+    return true;
+  }
+};
+
 export default function SignUpPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -33,7 +53,8 @@ export default function SignUpPage() {
       await signup(username, email, password);
       router.push('/');
     } catch (err) {
-      setError('Registration failed. Please try again.');
+      // Display the specific error message
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -60,7 +81,7 @@ export default function SignUpPage() {
             <label htmlFor="username" className="text-sm font-medium">
               Username
             </label>
-            <Input
+            <Input 
               id="username"
               type="text"
               placeholder="username"

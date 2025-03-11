@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ModeToggle } from '@/components/mode-toggle';
-import { Menu, X, BarChart2, Home, Settings, LogIn, User, LogOut, History } from 'lucide-react';
+import { Menu, X, BarChart2, Home, Settings, LogIn, User, LogOut, History, Calculator } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 
 export default function Navbar() {
@@ -65,6 +65,13 @@ export default function Navbar() {
             ))}
             <ModeToggle />
             
+            <Link href="/tools/cost-calculator">
+              <Button variant="ghost">
+                <Calculator className="h-4 w-4 mr-2" />
+                Cost Calculator
+              </Button>
+            </Link>
+
             {user ? (
               <div className="flex items-center space-x-2">
                 <Link href="/profile" className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
@@ -119,6 +126,13 @@ export default function Navbar() {
               </Link>
             ))}
             
+            <Link href="/tools/cost-calculator">
+              <Button variant="ghost" className="w-full mt-4">
+                <Calculator className="h-4 w-4 mr-2" />
+                Cost Calculator
+              </Button>
+            </Link>
+
             {user ? (
               <>
                 <Link
