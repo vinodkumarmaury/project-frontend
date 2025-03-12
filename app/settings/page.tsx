@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,46 @@ import {
   X,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+// At the top of your settings page
+const applyLanguage = (lang: string) => {
+  document.documentElement.lang = lang;
+  localStorage.setItem("preferred_language", lang);
+
+  // Apply any language-specific text (simplified example)
+  const translations: Record<string, Record<string, string>> = {
+    en: {
+      settings: "Settings",
+      profile: "Profile",
+      notifications: "Notifications",
+      appearance: "Appearance",
+      security: "Security",
+      data: "Data & Privacy",
+    },
+    es: {
+      settings: "Configuración",
+      profile: "Perfil",
+      notifications: "Notificaciones",
+      appearance: "Apariencia",
+      security: "Seguridad",
+      data: "Datos y Privacidad",
+    },
+    // Add more languages as needed
+  };
+
+  // Remove toast notification from here since we have it in useEffect
+};
 
 export default function SettingsPage() {
   const { user, token, logout, updateUser } = useAuth();
@@ -47,6 +87,10 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [dirty, setDirty] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const originalSettings = useRef<typeof settings | null>(null);
+  const originalAccountSettings = useRef<typeof accountSettings | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const initialLoadComplete = useRef(false);
 
   const [settings, setSettings] = useState({
     emailNotifications: false,
@@ -77,6 +121,9 @@ export default function SettingsPage() {
       const data = await api.get("/api/settings");
       setSettings(data);
 
+      // Store original settings
+      originalSettings.current = { ...data };
+
       // Sync theme with system
       if (data.theme) {
         setTheme(data.theme);
@@ -84,12 +131,18 @@ export default function SettingsPage() {
 
       // Load account settings
       if (user) {
-        setAccountSettings((prev) => ({
-          ...prev,
+        const accountData = {
           name: user.username || "",
           email: user.email || "",
           profileImage: user.profileImage || "",
-        }));
+          oldPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        };
+
+        setAccountSettings(accountData);
+        // Store original account settings
+        originalAccountSettings.current = { ...accountData };
       }
     } catch (error) {
       console.error("Error fetching settings:", error);
@@ -97,7 +150,9 @@ export default function SettingsPage() {
       const savedSettings = localStorage.getItem("userSettings");
       if (savedSettings) {
         try {
-          setSettings(JSON.parse(savedSettings));
+          const parsedSettings = JSON.parse(savedSettings);
+          setSettings(parsedSettings);
+          originalSettings.current = { ...parsedSettings };
         } catch (e) {
           console.error("Error parsing saved settings");
         }
@@ -117,9 +172,34 @@ export default function SettingsPage() {
     }
   }, [token, router, fetchSettings]);
 
-  // Mark form as dirty when settings change
+  // Improve the change detection useEffect
   useEffect(() => {
-    setDirty(true);
+    if (!originalSettings.current || !originalAccountSettings.current) {
+      return;
+    }
+
+    // Check if settings have changed
+    let settingsChanged = false;
+    const settingsKeys = Object.keys(settings) as (keyof typeof settings)[];
+    for (const key of settingsKeys) {
+      if (settings[key] !== originalSettings.current?.[key]) {
+        settingsChanged = true;
+        break;
+      }
+    }
+
+    // Check if account settings have changed (excluding passwords which are always different)
+    let accountChanged =
+      accountSettings.name !== originalAccountSettings.current.name ||
+      accountSettings.email !== originalAccountSettings.current.email;
+
+    // Password change detection (only if user started typing a new password)
+    let passwordChanged =
+      accountSettings.newPassword !== "" ||
+      accountSettings.oldPassword !== "" ||
+      accountSettings.confirmPassword !== "";
+
+    setDirty(settingsChanged || accountChanged || passwordChanged);
   }, [settings, accountSettings]);
 
   // Handle settings change
@@ -135,6 +215,11 @@ export default function SettingsPage() {
         setTheme(value as string);
       }
 
+      // If language changes, apply it immediately
+      if (key === "language") {
+        applyLanguage(value as string);
+      }
+
       return newSettings;
     });
   };
@@ -147,6 +232,9 @@ export default function SettingsPage() {
 
       // Save to localStorage as backup
       localStorage.setItem("userSettings", JSON.stringify(settings));
+
+      // Update original settings reference after successful save
+      originalSettings.current = { ...settings };
 
       toast({
         title: "Settings saved",
@@ -192,12 +280,13 @@ export default function SettingsPage() {
     try {
       setIsLoading(true);
 
-      // Call API to update account
-      await api.put("/api/account", {
-        name: accountSettings.name,
+      // Change this API call to match your existing backend endpoint
+      await api.put("/api/update-profile", {
+        username: accountSettings.name,
         email: accountSettings.email,
-        oldPassword: accountSettings.oldPassword,
-        newPassword: accountSettings.newPassword,
+        password: accountSettings.oldPassword, // Note: backend expects current password here
+        firstName: user?.firstName || "", // Include optional fields
+        lastName: user?.lastName || "",
       });
 
       // Update local user context
@@ -206,13 +295,21 @@ export default function SettingsPage() {
         email: accountSettings.email,
       });
 
-      // Reset password fields
-      setAccountSettings((prev) => ({
-        ...prev,
+      // Create updated account settings without passwords
+      const updatedAccountSettings = {
+        name: accountSettings.name,
+        email: accountSettings.email,
+        profileImage: accountSettings.profileImage,
         oldPassword: "",
         newPassword: "",
         confirmPassword: "",
-      }));
+      };
+
+      // Update state with empty password fields
+      setAccountSettings(updatedAccountSettings);
+
+      // Update original reference with the new values
+      originalAccountSettings.current = { ...updatedAccountSettings };
 
       toast({
         title: "Account updated",
@@ -244,7 +341,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Add this function to handle data download
+  // Updated downloadUserData function to include all parameters and results
   const downloadUserData = async () => {
     try {
       setIsLoading(true);
@@ -256,17 +353,82 @@ export default function SettingsPage() {
       // Fetch user data
       const userData = await api.get("/api/user/data/export");
 
-      // Convert to JSON string
-      const dataStr = JSON.stringify(userData, null, 2);
+      // Format data based on selected format
+      let dataContent;
+      let mimeType;
+      let fileExtension;
+
+      if (settings.dataExportFormat === "csv" || settings.dataExportFormat === "excel") {
+        // Convert JSON to CSV
+        const csvRows = [];
+        
+        // Add user data section
+        if (userData.user) {
+          csvRows.push(`# User Information`);
+          csvRows.push(Object.keys(userData.user).join(','));
+          csvRows.push(Object.values(userData.user).map(val => `"${val}"`).join(','));
+          csvRows.push('\n');
+        }
+        
+        // Add settings section
+        if (userData.settings) {
+          csvRows.push(`# User Settings`);
+          csvRows.push(Object.keys(userData.settings).join(','));
+          csvRows.push(Object.values(userData.settings).map(val => `"${val}"`).join(','));
+          csvRows.push('\n');
+        }
+        
+        // Add predictions section with ALL parameters
+        if (userData.predictions && userData.predictions.length > 0) {
+          csvRows.push(`# Prediction Data`);
+          
+          // Get all possible keys from all predictions
+          const allPredictionKeys = new Set();
+          userData.predictions.forEach((pred: Record<string, any>) => {
+            Object.keys(pred).forEach(key => allPredictionKeys.add(key));
+          });
+          
+          // Convert to array and sort for consistent order
+          const predictionKeys = Array.from(allPredictionKeys).sort();
+          
+          // Add headers
+          csvRows.push(predictionKeys.join(','));
+          
+          // Add each prediction with all its parameters
+          userData.predictions.forEach((pred: Record<string, any>) => {
+            const row = (predictionKeys as string[]).map((key: string) => {
+              // Handle missing values
+              if (!(key in pred)) return '';
+              
+              // Format values appropriately
+              const val = pred[key];
+              if (val === null || val === undefined) return '';
+              if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+              return `"${String(val).replace(/"/g, '""')}"`;
+            });
+            
+            csvRows.push(row.join(','));
+          });
+        }
+        
+        dataContent = csvRows.join("\n");
+        mimeType = settings.dataExportFormat === "csv" ? "text/csv" : "application/vnd.ms-excel";
+        fileExtension = settings.dataExportFormat === "csv" ? "csv" : "xls";
+      } else {
+        // Default JSON format - already includes all data
+        dataContent = JSON.stringify(userData, null, 2);
+        mimeType = "application/json";
+        fileExtension = "json";
+      }
 
       // Create download link
-      const dataBlob = new Blob([dataStr], { type: "application/json" });
+      const dataBlob = new Blob([dataContent], { type: mimeType });
       const url = window.URL.createObjectURL(dataBlob);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
         "download",
-        `rockblast_user_data_${new Date().toISOString().slice(0, 10)}.json`
+        `rockblast_user_data_${new Date().toISOString().slice(0, 10)}.${fileExtension}`
       );
       document.body.appendChild(link);
 
@@ -282,8 +444,7 @@ export default function SettingsPage() {
       console.error("Error downloading data:", error);
       toast({
         title: "Download Failed",
-        description:
-          "Couldn't prepare your data for download. Please try again.",
+        description: "Couldn't prepare your data for download. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -305,7 +466,7 @@ export default function SettingsPage() {
       // i18n.changeLanguage(settings.language);
 
       // Show toast notification when language changes
-      if (isLoaded) {
+      if (isLoaded && initialLoadComplete.current) {
         toast({
           title: "Language Changed",
           description: `Application language set to: ${
@@ -323,8 +484,33 @@ export default function SettingsPage() {
           }`,
         });
       }
+
+      // Mark initial load as complete after the first render
+      if (isLoaded && !initialLoadComplete.current) {
+        initialLoadComplete.current = true;
+      }
     }
   }, [settings.language, isLoaded, toast]);
+
+  // Add a cancel function to reset changes
+  const cancelChanges = () => {
+    // Reset settings to original values
+    if (originalSettings.current) {
+      setSettings({ ...originalSettings.current });
+    }
+
+    // Reset account settings to original values
+    if (originalAccountSettings.current) {
+      setAccountSettings({ ...originalAccountSettings.current });
+    }
+
+    setDirty(false);
+
+    toast({
+      title: "Changes Discarded",
+      description: "Your changes have been discarded.",
+    });
+  };
 
   if (!user) {
     return (
@@ -362,11 +548,7 @@ export default function SettingsPage() {
               Save Changes
             </Button>
 
-            <Button
-              variant="outline"
-              onClick={() => router.push("/")}
-              className="gap-2"
-            >
+            <Button variant="outline" onClick={cancelChanges} className="gap-2">
               <X className="h-4 w-4" />
               Cancel
             </Button>
@@ -492,7 +674,8 @@ export default function SettingsPage() {
                       Receive updates and alerts via email
                     </p>
                   </div>
-                 
+
+                  {/* Improved Switch component with better visibility */}
                   <Switch
                     id="email-notifications"
                     checked={settings.emailNotifications}
@@ -677,7 +860,11 @@ export default function SettingsPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={downloadUserData}
+                    onClick={(e) => {
+                      // Prevent event propagation to avoid triggering dirty state check
+                      e.stopPropagation();
+                      downloadUserData();
+                    }}
                     disabled={isLoading}
                   >
                     {isLoading ? (
@@ -767,19 +954,91 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
-                <Button variant="destructive" className="w-full sm:w-auto">
+                <Button
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={async () => {
+                    try {
+                      setIsLoading(true);
+                      await api.post("/api/logout/all-devices", {});
+                      toast({
+                        title: "Success",
+                        description: "Signed out from all devices successfully",
+                      });
+                      // Sign out current session too
+                      logout();
+                      router.push("/sign-in");
+                    } catch (error) {
+                      toast({
+                        title: "Error",
+                        description: "Failed to sign out from all devices",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                >
                   Sign Out From All Devices
                 </Button>
 
                 <Separator />
 
                 <div className="pt-2">
-                  <Button
-                    variant="outline"
-                    className="text-destructive border-destructive hover:bg-destructive/10"
+                  <AlertDialog
+                    open={showDeleteConfirm}
+                    onOpenChange={setShowDeleteConfirm}
                   >
-                    Delete Account
-                  </Button>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="text-destructive border-destructive hover:bg-destructive/10"
+                      >
+                        Delete Account
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Are you absolutely sure?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete your account and remove
+                          your data from our servers. This action cannot be
+                          undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+
+                        <AlertDialogAction
+                          onClick={async () => {
+                            try {
+                              await api.delete("/api/account");
+                              toast({
+                                title: "Account Deleted",
+                                description:
+                                  "Your account has been permanently deleted.",
+                              });
+                              logout();
+                              router.push("/");
+                            } catch (error) {
+                              toast({
+                                title: "Error",
+                                description:
+                                  "Failed to delete account. Please try again.",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete Account
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
                   <p className="text-sm text-muted-foreground mt-2">
                     Permanently delete your account and all associated data
                   </p>
