@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://rock-blasting-backend.onrender.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -12,35 +12,45 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
   console.log(`Making ${options.method || 'GET'} request to ${endpoint}`, 
     options.body ? JSON.parse(options.body as string) : 'No body');
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    console.error(`API Error (${response.status}):`, text);
-    
-    try {
-      const data = JSON.parse(text);
-      throw new Error(data.detail ? 
-        (Array.isArray(data.detail) ? 
-          `Validation error: ${data.detail.map((e: { loc: any[]; msg: string }) => `${e.loc[1]}: ${e.msg}`).join(', ')
-        }` : 
-          data.detail) : 
-        `Error ${response.status}: ${response.statusText}`
-      );
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`API Error (${response.status}):`, text);
+      
+      try {
+        const data = JSON.parse(text);
+        throw new Error(data.detail ? 
+          (Array.isArray(data.detail) ? 
+            `Validation error: ${data.detail.map((e: {loc: any[], msg: string}) => `${e.loc[1]}: ${e.msg}`).join(', ')}` : 
+            data.detail) : 
+          `Error ${response.status}: ${response.statusText}`
+        );
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+        }
+        throw e;
       }
-      throw e;
     }
-  }
 
-  // If the response is empty, return null instead of trying to parse JSON
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
+    // If the response is empty, return null instead of trying to parse JSON
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+  } catch (error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.error('CORS error or network failure:', error);
+      throw new Error(
+        'Unable to connect to the server. This might be due to CORS restrictions. ' +
+        'Please ensure the backend allows requests from this domain.'
+      );
+    }
+    throw error;
+  }
 }
 
 // Helper methods for common operations
