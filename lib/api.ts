@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://rock-blasting-backend.onrender.com';
 
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -25,7 +25,8 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
       const data = JSON.parse(text);
       throw new Error(data.detail ? 
         (Array.isArray(data.detail) ? 
-          `Validation error: ${data.detail.map(e => `${e.loc[1]}: ${e.msg}`).join(', ')}` : 
+          `Validation error: ${data.detail.map((e: { loc: any[]; msg: string }) => `${e.loc[1]}: ${e.msg}`).join(', ')
+        }` : 
           data.detail) : 
         `Error ${response.status}: ${response.statusText}`
       );
