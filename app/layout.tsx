@@ -25,6 +25,7 @@ export default function RootLayout({
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             <div className="min-h-screen bg-background">
               <Navbar />
+              <div className="h-16"></div>  {/* Spacer to prevent content from hiding under navbar */}
               <main className="container mx-auto px-4 py-6">
                 {children}
               </main>

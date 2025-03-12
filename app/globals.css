@@ -80,3 +80,14 @@
     @apply bg-background text-foreground;
   }
 }
+.switch-root[data-state="checked"] {
+  @apply bg-primary border-primary;
+}
+
+.switch-root[data-state="unchecked"] {
+  @apply bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600;
+}
+
+.switch-thumb {
+  @apply bg-white dark:bg-gray-200;
+}

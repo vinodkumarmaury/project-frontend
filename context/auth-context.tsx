@@ -10,6 +10,28 @@ interface User {
   firstName?: string;
   lastName?: string;
   bio?: string;
+  profileImage?: string; // Add this optional property
+}
+
+// Add this near the top of your file
+interface UserSettings {
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  language: string;
+  theme: string;
+  dataExportFormat: string;
+  dataRetention: string;
+  autoSave: boolean;
+}
+
+// And for account settings
+interface AccountSettings {
+  name: string;
+  email: string;
+  profileImage: string;
+  oldPassword: string;
+  newPassword: string;
+  confirmPassword: string;
 }
 
 interface AuthContextType {
@@ -19,6 +41,7 @@ interface AuthContextType {
   signup: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
+  updateUser: (userData: Partial<User>) => void; // Add this line to your auth-context.tsx
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +50,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<UserSettings>({
+    emailNotifications: false,
+    pushNotifications: false,
+    language: 'en',
+    theme: 'system',
+    dataExportFormat: 'csv',
+    dataRetention: '30days',
+    autoSave: true
+  });
+  const [accountSettings, setAccountSettings] = useState<AccountSettings>({
+    name: '',
+    email: '',
+    profileImage: '',
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
   const router = useRouter();
 
   useEffect(() => {
@@ -105,8 +145,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/');
   };
 
+  const updateUser = (userData: Partial<User>) => {
+    setUser(prevUser => {
+      if (prevUser) {
+        const updatedUser = { ...prevUser, ...userData };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        return updatedUser;
+      }
+      return prevUser;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, signup, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, signup, logout, loading, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
