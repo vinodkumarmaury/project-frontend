@@ -103,9 +103,9 @@ export default function PredictionsPage() {
     }
   }, [token, router, toast]);
 
-  const rockTypes = ['Granite', 'Limestone', 'Sandstone', 'Basalt', 'Shale'];
-  const explosiveTypes = ['ANFO', 'Emulsion', 'Dynamite', 'Water Gel'];
-  const stemmingMaterials = ['Drill Cuttings', 'Angular Rock', 'Sand', 'Gravel'];
+  const rockTypes = ['Granite', 'Limestone', 'Sandstone', 'Basalt', 'Shale', 'Coal', 'Iron'];
+  const explosiveTypes = ['ANFO', 'Emulsion', 'Slurry'];
+  const stemmingMaterials = ['Fine particle of same Ore', 'Angular Rock', 'Sand', 'Gravel'];
   const waterLogStatus = ['Dry', 'Wet', 'Partially Wet'];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,13 +146,13 @@ export default function PredictionsPage() {
         Explosive_Type: formData.get('Explosive_Type') || '',
         "Blast_Pattern_Spacing (m)": parseFloat(formData.get('Blast_Pattern_Spacing') as string) || 0,
         "Delay_Timing (ms)": parseFloat(formData.get('Delay_Timing') as string) || 0,
-        "Powder_Factor (kg/m³)": 0.5, // Default value for prediction
+        "Powder_Factor (kg/m³)": 0, // Default value for prediction
         Weathering_Degree: parseFloat(formData.get('Weathering_Degree') as string) || 0,
         "Groundwater_Level (m)": parseFloat(formData.get('Groundwater_Level') as string) || 0,
         "Blast_Vibration_PPV (mm/s)": 0, // Default value for non-input field
         "Fragmentation_Size (cm)": 0, // Will be predicted
         "Blasting_Cost ($/tonne)": 0, // Default value for non-input field
-        "Penetration_Rate (m/min)": parseFloat(formData.get('Penetration_Rate') as string) || 1.5,
+        "Penetration_Rate (m/min)": parseFloat(formData.get('Penetration_Rate') as string) || 0,
         "Bench_Height (m)": parseFloat(formData.get('Bench_Height') as string) || 10,
         Stemming_Material: formData.get('Stemming_Material') || '',
         Water_Log_Status: formData.get('Water_Log_Status') || '',
@@ -162,8 +162,10 @@ export default function PredictionsPage() {
         "Burden (m)": parseFloat(formData.get('Burden') as string) || 0,
         "Spacing (m)": parseFloat(formData.get('Spacing') as string) || 0,
         "Stemming (m)": parseFloat(formData.get('Stemming_Length') as string) || 0, // Reuse stemming length
-        "SubDrilling (m)": parseFloat(formData.get('SubDrilling') as string || '0') || 0,
-        "Rock_Volume (m³)": parseFloat(formData.get('Rock_Volume') as string || '0') || 0
+        "SubDrilling (m)": parseFloat(formData.get('SubDrilling') as string ) || 0,
+        "Hole_Depth (m)": parseFloat(formData.get('Hole_Depth') as string) || 0,
+        "Air_Overpressure (Pa)": parseFloat(formData.get('Air_Overpressure') as string) || 0,
+        "Rock_Volume (m³)": parseFloat(formData.get('Rock_Volume') as string) || 0
       };
 
       console.log("Sending prediction request with data:", requestData);
@@ -271,24 +273,52 @@ export default function PredictionsPage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="rock-density">Rock Density (kg/m³)</label>
-                    <Input id="rock-density" type="number" name="Rock_Density" required />
+                    <Input 
+                      id="rock-density" 
+                      type="number" 
+                      name="Rock_Density" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="ucs">UCS (MPa)</label>
-                    <Input id="ucs" type="number" name="UCS" required />
+                    <Input 
+                      id="ucs" 
+                      type="number" 
+                      name="UCS" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="elastic-modulus">Elastic Modulus (GPa)</label>
-                    <Input id="elastic-modulus" type="number" name="Rock_Elastic_Modulus" required />
+                    <Input 
+                      id="elastic-modulus" 
+                      type="number" 
+                      name="Rock_Elastic_Modulus" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
                   </div>
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                     <label htmlFor="fracture-frequency">Fracture Frequency (/m)</label>
-                    <Input id="fracture-frequency" type="number" name="Fracture_Frequency" required />
-                  </div>
-                  <div className="space-y-2">
+                    <Input 
+                      id="fracture-frequency" 
+                      type="number" 
+                      name="Fracture_Frequency" 
+                      step="0.01" 
+                      placeholder="0.0" 
+                      required 
+                    />
+                    </div>
+                  {/* <div className="space-y-2">
                     <label htmlFor="weathering-degree">Weathering Degree</label>
                     <Input id="weathering-degree" type="number" name="Weathering_Degree" required min="0" max="1" step="0.1" />
-                  </div>
+                  </div> */}
                 </div>
               </div>
 
@@ -296,18 +326,43 @@ export default function PredictionsPage() {
               <div className="space-y-4">
                 <h3 className="font-semibold">Blast Design Parameters</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                    <label htmlFor="hole-diameter">No. of Hole</label>
+                    <Input id="no-of-hole" type="number" name="No_Hole" required />
+                  </div>
                   <div className="space-y-2">
                     <label htmlFor="hole-diameter">Hole Diameter (mm)</label>
-                    <Input id="hole-diameter" type="number" name="Hole_Diameter" required />
+                    <Input 
+                      id="hole-diameter" 
+                      type="number" 
+                      name="Hole_Diameter" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
                   </div>
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                     <label htmlFor="charge-length">Charge Length (m)</label>
-                    <Input id="charge-length" type="number" name="Charge_Length" required />
-                  </div>
-                  <div className="space-y-2">
+                    <Input 
+                      id="charge-length" 
+                      type="number" 
+                      name="Charge_Length" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
+                    </div>
+                    <div className="space-y-2">
                     <label htmlFor="stemming-length">Stemming Length (m)</label>
-                    <Input id="stemming-length" type="number" name="Stemming_Length" required />
-                  </div>
+                    <Input 
+                      id="stemming-length" 
+                      type="number" 
+                      name="Stemming_Length" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
+                    </div>
                   <div className="space-y-2">
                     <label htmlFor="explosive-type">Explosive Type</label>
                     <Select name="Explosive_Type" required>
@@ -323,30 +378,77 @@ export default function PredictionsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <label htmlFor="pattern-spacing">Pattern Spacing (m)</label>
                     <Input id="pattern-spacing" type="number" name="Blast_Pattern_Spacing" required />
-                  </div>
+                  </div> */}
                   <div className="space-y-2">
                     <label htmlFor="delay-timing">Delay Timing (ms)</label>
-                    <Input id="delay-timing" type="number" name="Delay_Timing" required />
+                    <Input 
+                      id="delay-timing" 
+                      type="number" 
+                      name="Delay_Timing" 
+                      step="0.01" 
+                      placeholder="0.00"
+                      required 
+                    />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="explosive-weight">Explosive Weight (kg)</label>
-                    <Input id="explosive-weight" type="number" name="Explosive_Weight" required />
+                    <label htmlFor="explosive-weight">Explosive Weight (kg) per Hole</label>
+                    <Input 
+                      id="explosive-weight" 
+                      type="number" 
+                      name="Explosive_Weight" 
+                      step="0.01" 
+                      placeholder="0.00"
+                      required 
+                    />
                   </div>
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                     <label htmlFor="burden">Burden (m)</label>
-                    <Input id="burden" type="number" name="Burden" required />
-                  </div>
-                  <div className="space-y-2">
+                    <Input 
+                      id="burden" 
+                      type="number" 
+                      name="Burden" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
+                    </div>
+                    <div className="space-y-2">
                     <label htmlFor="spacing">Spacing (m)</label>
-                    <Input id="spacing" type="number" name="Spacing" required />
-                  </div>
-                  <div className="space-y-2">
+                    <Input 
+                      id="spacing" 
+                      type="number" 
+                      name="Spacing" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
+                    </div>
+                    <div className="space-y-2">
                     <label htmlFor="sub-drilling">Sub-Drilling (m)</label>
-                    <Input id="sub-drilling" type="number" name="SubDrilling" required defaultValue="0.5" />
-                  </div>
+                    <Input 
+                      id="sub-drilling" 
+                      type="number" 
+                      name="SubDrilling" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                      defaultValue="0.5" 
+                    />
+                    </div>
+                    <div className="space-y-2">
+                    <label htmlFor="hole-depth">Hole Depth (m)</label>
+                    <Input 
+                      id="hole-depth" 
+                      type="number" 
+                      name="Hole_Depth" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      required 
+                    />
+                    </div>
                   <div className="space-y-2">
                     <label htmlFor="stemming-material">Stemming Material</label>
                     <Select name="Stemming_Material" required>
@@ -369,10 +471,10 @@ export default function PredictionsPage() {
               <div className="space-y-4">
                 <h3 className="font-semibold">Environmental & Additional Parameters</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <label htmlFor="groundwater-level">Groundwater Level (m)</label>
                     <Input id="groundwater-level" type="number" name="Groundwater_Level" required />
-                  </div>
+                  </div> */}
                   <div className="space-y-2">
                     <label htmlFor="water-log-status">Water Log Status</label>
                     <Select name="Water_Log_Status" required>
@@ -388,18 +490,18 @@ export default function PredictionsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <label htmlFor="penetration-rate">Penetration Rate (m/min)</label>
                     <Input id="penetration-rate" type="number" name="Penetration_Rate" required defaultValue="1.5" />
-                  </div>
-                  <div className="space-y-2">
+                  </div> */}
+                  {/* <div className="space-y-2">
                     <label htmlFor="bench-height">Bench Height (m)</label>
                     <Input id="bench-height" type="number" name="Bench_Height" required defaultValue="10" />
-                  </div>
-                  <div className="space-y-2">
+                  </div> */}
+                  {/* <div className="space-y-2">
                     <label htmlFor="rock-volume">Rock Volume (m³)</label>
                     <Input id="rock-volume" type="number" name="Rock_Volume" required defaultValue="100" />
-                  </div>
+                  </div> */}
                 </div>
               </div>
 

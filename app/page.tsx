@@ -213,7 +213,7 @@ export default function Home() {
         <div>
           <h2 className="text-3xl font-bold mb-4">Industry-Leading Prediction Accuracy</h2>
           <p className="text-muted-foreground mb-6">
-            Our system has been trained on real-world blasting scenarios across different rock types and mining conditions.
+            Our system has been trained on real-world blasting scenarios across different mining conditions.
           </p>
           <ul className="space-y-3 mb-8">
             <li className="flex items-center">
