@@ -111,7 +111,37 @@ export default function PredictionHistoryPage() {
     }
   }, [toast]); // Add dependencies
   
-  // Get ID from URL if present
+  // Add a function to fetch user's prediction history from server
+  const fetchPredictionHistory = async () => {
+    if (!token) return;
+    
+    try {
+      setLoading(true);
+      const history = await api.get('/api/predictions/history');
+      
+      if (history && Array.isArray(history)) {
+        // Update recent predictions with server data
+        setRecentPredictions(history.map(item => ({
+          id: item.id || item._id,
+          timestamp: item.timestamp || item.created_at || new Date().toISOString(),
+          rockType: item.Rock_Type || item.input_data?.Rock_Type || "Unknown",
+          customId: !!item.custom_id
+        })));
+        
+        // Also update localStorage for offline access
+        localStorage.setItem('predictions', JSON.stringify(recentPredictions));
+      }
+    } catch (error) {
+      console.error('Error fetching prediction history:', error);
+      // Fall back to localStorage if server fetch fails
+      const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
+      setRecentPredictions(savedPredictions);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Modify the useEffect to fetch history from server
   useEffect(() => {
     const idFromUrl = searchParams.get('id');
     if (idFromUrl) {
@@ -119,10 +149,9 @@ export default function PredictionHistoryPage() {
       handleFetch(idFromUrl);
     }
     
-    // Load recent predictions from localStorage
-    const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
-    setRecentPredictions(savedPredictions);
-  }, [searchParams, handleFetch]); // Add handleFetch as dependency
+    // First try to load from server, then fall back to localStorage
+    fetchPredictionHistory();
+  }, [searchParams, handleFetch, token]); // Add token dependency
   
   // Add this effect to fetch user settings
   useEffect(() => {
