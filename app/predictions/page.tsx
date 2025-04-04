@@ -165,7 +165,8 @@ export default function PredictionsPage() {
         "SubDrilling (m)": parseFloat(formData.get('SubDrilling') as string ) || 0,
         "Hole_Depth (m)": parseFloat(formData.get('Hole_Depth') as string) || 0,
         "Air_Overpressure (Pa)": parseFloat(formData.get('Air_Overpressure') as string) || 0,
-        "Rock_Volume (m³)": parseFloat(formData.get('Rock_Volume') as string) || 0
+        "Rock_Volume (m³)": parseFloat(formData.get('Rock_Volume') as string) || 0,
+        "Measurement_Distance": parseFloat(formData.get('Measurement_Distance') as string) || 100
       };
 
       console.log("Sending prediction request with data:", requestData);
@@ -210,6 +211,71 @@ export default function PredictionsPage() {
       });
     }
   }, [predictionId, toast]);
+
+  // Function to calculate results using Langefors-Kihlström method
+  const calculateLangeforsKihlstrom = (metric: string, inputData: any): number => {
+    if (!inputData) return 0;
+
+    // Get values from input data
+    const rockDensity = inputData["Rock_Density (kg/m³)"] || 2700;
+    const ucs = inputData["UCS (MPa)"] || 100;
+    const burden = inputData["Burden (m)"] || 3;
+    const spacing = inputData["Spacing (m)"] || 3.5;
+    const holeDiameter = inputData["Hole_Diameter (mm)"] || 90;
+    const chargeLength = inputData["Charge_Length (m)"] || 6;
+    const explosiveWeight = inputData["Explosive_Weight (kg)"] || 120;
+    const stemmingLength = inputData["Stemming_Length (m)"] || 3;
+    const fractureFrequency = inputData["Fracture_Frequency (/m)"] || 2;
+    const explosiveType = inputData["Explosive_Type"] || "ANFO";
+    const measurementDistance = inputData["Measurement_Distance"] || 100; // Use the new field
+    
+    // Explosive specific energy (MJ/kg) based on type
+    let explosiveEnergy = 3.7; // Default for ANFO
+    if (explosiveType === "Emulsion") explosiveEnergy = 4.3;
+    if (explosiveType === "Slurry") explosiveEnergy = 4.1;
+    
+    // Calculate rock factor (c) - simplified version
+    const rockFactor = 0.17 * (ucs / 100) * (1 + fractureFrequency / 3);
+    
+    switch (metric) {
+      case 'Fragmentation_Size (cm)': {
+        // Kuz-Ram formula (Langefors-Kihlström based)
+        // X50 = A * (V0/Q)^0.8 * Q^0.167
+        const V0 = burden * spacing * chargeLength; // Volume per hole
+        const Q = explosiveWeight; // Explosive charge per hole
+        const A = 0.06 * (rockFactor ** 0.8);
+        return A * Math.pow(V0/Q, 0.8) * Math.pow(Q, 0.167) * 100; // Convert to cm
+      }
+      
+      case 'Vibration_Level (dB)': {
+        // Simplified vibration level calculation
+        // Based on scaled distance formula adapted to dB
+        const distance = measurementDistance; // Use input measurement distance
+        const scaledDistance = distance / Math.sqrt(explosiveWeight);
+        const peakParticleVelocity = 700 * Math.pow(scaledDistance, -1.5); // mm/s
+        
+        // Convert PPV to dB (approximation)
+        return 20 * Math.log10(peakParticleVelocity) + 60;
+      }
+      
+      case 'Noise_Level (dB)': {
+        // Simplified air overpressure calculation in dB
+        const distance = measurementDistance; // Use input measurement distance
+        const scaledDistance = distance / Math.pow(explosiveWeight, 1/3);
+        // Correlation between scaled distance and noise level
+        return 180 - 6 * Math.log(scaledDistance) * 4.5;
+      }
+      
+      case 'Powder_Factor': {
+        // Powder factor (kg/m³) calculation
+        const volume = burden * spacing * (chargeLength + stemmingLength);
+        return explosiveWeight / volume;
+      }
+      
+      default:
+        return 0;
+    }
+  };
 
   if (!user) {
     return (
@@ -471,10 +537,6 @@ export default function PredictionsPage() {
               <div className="space-y-4">
                 <h3 className="font-semibold">Environmental & Additional Parameters</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {/* <div className="space-y-2">
-                    <label htmlFor="groundwater-level">Groundwater Level (m)</label>
-                    <Input id="groundwater-level" type="number" name="Groundwater_Level" required />
-                  </div> */}
                   <div className="space-y-2">
                     <label htmlFor="water-log-status">Water Log Status</label>
                     <Select name="Water_Log_Status" required>
@@ -490,18 +552,21 @@ export default function PredictionsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* <div className="space-y-2">
-                    <label htmlFor="penetration-rate">Penetration Rate (m/min)</label>
-                    <Input id="penetration-rate" type="number" name="Penetration_Rate" required defaultValue="1.5" />
-                  </div> */}
-                  {/* <div className="space-y-2">
-                    <label htmlFor="bench-height">Bench Height (m)</label>
-                    <Input id="bench-height" type="number" name="Bench_Height" required defaultValue="10" />
-                  </div> */}
-                  {/* <div className="space-y-2">
-                    <label htmlFor="rock-volume">Rock Volume (m³)</label>
-                    <Input id="rock-volume" type="number" name="Rock_Volume" required defaultValue="100" />
-                  </div> */}
+                  
+                  {/* Add this new field for measurement distance */}
+                  <div className="space-y-2">
+                    <label htmlFor="measurement-distance">Measurement Distance (m)</label>
+                    <Input 
+                      id="measurement-distance" 
+                      type="number" 
+                      name="Measurement_Distance" 
+                      step="0.1" 
+                      placeholder="100.0" 
+                      defaultValue="100" 
+                      required 
+                    />
+                    <p className="text-xs text-muted-foreground">Distance at which vibration and noise are measured</p>
+                  </div>
                 </div>
               </div>
 
@@ -559,6 +624,7 @@ export default function PredictionsPage() {
                         <TableRow>
                           <TableHead>Model</TableHead>
                           <TableHead className="text-right">Prediction</TableHead>
+                          <TableHead className="text-right">Langefors-Kihlström</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -566,6 +632,9 @@ export default function PredictionsPage() {
                           <TableRow key={model}>
                             <TableCell>{model}</TableCell>
                             <TableCell className="text-right">{value.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">
+                              {calculateLangeforsKihlstrom(metric, results?.input_data).toFixed(2)}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
