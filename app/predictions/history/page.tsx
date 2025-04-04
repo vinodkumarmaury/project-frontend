@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
   TableBody,
@@ -70,6 +71,9 @@ export default function PredictionHistoryPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editFormData, setEditFormData] = useState<Record<string, any>>({});
   const [editLoading, setEditLoading] = useState(false);
+
+  // Add this to track auth state
+  const [authReady, setAuthReady] = useState(false);
   
   // Extract the API fetch into a separate function so we can call it from useEffect
   const handleFetch = useCallback(async (id: string) => {
@@ -111,47 +115,92 @@ export default function PredictionHistoryPage() {
     }
   }, [toast]); // Add dependencies
   
-  // Add a function to fetch user's prediction history from server
-  const fetchPredictionHistory = async () => {
-    if (!token) return;
+  // Add a function to fetch prediction history from the server
+  const fetchPredictionHistory = useCallback(async () => {
+    if (!token) {
+      console.log("No token available, skipping prediction history fetch");
+      return;
+    }
     
     try {
       setLoading(true);
+      console.log("Attempting to fetch prediction history...");
       const history = await api.get('/api/predictions/history');
+      console.log("Raw prediction history response:", history);
       
       if (history && Array.isArray(history)) {
-        // Update recent predictions with server data
-        setRecentPredictions(history.map(item => ({
+        // Format the data for display
+        console.log("Processing prediction history array of length:", history.length);
+        const formattedHistory = history.map(item => ({
           id: item.id || item._id,
           timestamp: item.timestamp || item.created_at || new Date().toISOString(),
           rockType: item.Rock_Type || item.input_data?.Rock_Type || "Unknown",
           customId: !!item.custom_id
-        })));
+        }));
         
-        // Also update localStorage for offline access
-        localStorage.setItem('predictions', JSON.stringify(recentPredictions));
+        console.log("Formatted history:", formattedHistory);
+        
+        // If API returned empty array and in development mode, use sample data
+        if (formattedHistory.length === 0 && process.env.NODE_ENV === 'development') {
+          console.log("API returned empty array, using sample data instead");
+          const sampleData = [
+            {
+              id: "sample-123",
+              timestamp: new Date().toISOString(),
+              rockType: "Granite (Sample)"
+            },
+            {
+              id: "sample-456",
+              timestamp: new Date(Date.now() - 86400000).toISOString(),
+              rockType: "Limestone (Sample)"
+            }
+          ];
+          setRecentPredictions(sampleData);
+        } else {
+          setRecentPredictions(formattedHistory);
+        }
+        
+        // Update localStorage for offline access
+        localStorage.setItem('predictions', JSON.stringify(formattedHistory.length > 0 ? 
+                             formattedHistory : []));
+      } else {
+        console.warn("History response is not an array:", history);
+        // Fall back to localStorage
+        const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
+        setRecentPredictions(savedPredictions);
       }
     } catch (error) {
       console.error('Error fetching prediction history:', error);
-      // Fall back to localStorage if server fetch fails
+      // Fall back to localStorage
       const savedPredictions = JSON.parse(localStorage.getItem('predictions') || '[]');
       setRecentPredictions(savedPredictions);
     } finally {
       setLoading(false);
     }
-  };
-  
-  // Modify the useEffect to fetch history from server
+  }, [token]);
+
+  // Update the useEffect for initial data loading
   useEffect(() => {
-    const idFromUrl = searchParams.get('id');
-    if (idFromUrl) {
-      setPredictionId(idFromUrl);
-      handleFetch(idFromUrl);
+    // Check if auth is ready
+    if (token) {
+      if (!authReady) {
+        setAuthReady(true);
+        console.log("Authentication ready, token available");
+      }
+      
+      // Load initial data from URL if available
+      const idFromUrl = searchParams.get('id');
+      if (idFromUrl) {
+        setPredictionId(idFromUrl);
+        handleFetch(idFromUrl);
+      }
+      
+      // Fetch prediction history
+      fetchPredictionHistory();
+    } else {
+      console.log("Waiting for authentication token...");
     }
-    
-    // First try to load from server, then fall back to localStorage
-    fetchPredictionHistory();
-  }, [searchParams, handleFetch, token]); // Add token dependency
+  }, [token, authReady, searchParams, handleFetch, fetchPredictionHistory]);
   
   // Add this effect to fetch user settings
   useEffect(() => {
@@ -406,6 +455,70 @@ export default function PredictionHistoryPage() {
     }
   };
 
+  // Render prediction history table
+  const renderPredictionHistory = () => {
+    if (loading && recentPredictions.length === 0) {
+      return (
+        <div className="flex justify-center items-center py-8">
+          <div className="animate-spin mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          </div>
+          Loading...
+        </div>
+      );
+    }
+    
+    if (recentPredictions.length === 0) {
+      return (
+        <div className="text-center py-8 text-muted-foreground">
+          <p>No prediction history found.</p>
+          <p className="text-sm mt-2">Make a prediction to see it here.</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="border rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-muted border-b">
+              <th className="px-4 py-2 text-left">Date</th>
+              <th className="px-4 py-2 text-left">Rock Type</th>
+              <th className="px-4 py-2 text-left">Prediction ID</th>
+              <th className="px-4 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentPredictions.map((prediction) => (
+              <tr key={prediction.id} className="border-b">
+                <td className="px-4 py-2">
+                  {new Date(prediction.timestamp).toLocaleString()}
+                </td>
+                <td className="px-4 py-2">{prediction.rockType || "Unknown"}</td>
+                <td className="px-4 py-2">
+                  <code className="text-xs bg-muted p-1 rounded">{prediction.id}</code>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <Button 
+                    onClick={() => {
+                      setPredictionId(prediction.id);
+                      handleFetch(prediction.id);
+                    }}
+                    size="sm"
+                  >
+                    View
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   // Protect the route
   if (!user) {
     return (
@@ -416,319 +529,281 @@ export default function PredictionHistoryPage() {
   }
 
   return (
-    <div className="space-y-8 container mx-auto px-4 py-8">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold">Prediction History</h1>
-        <p className="text-muted-foreground">
-          View previous prediction results by entering a prediction ID
-        </p>
-      </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid gap-6">
+        {/* Form to fetch prediction by ID */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Find Prediction by ID</CardTitle>
+            <CardDescription>Enter a prediction ID to view details</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter prediction ID"
+                  className="flex-1"
+                  value={predictionId}
+                  onChange={(e) => setPredictionId(e.target.value)}
+                />
+                <Button type="submit" disabled={loading}>
+                  {loading ? 'Searching...' : (
+                    <>
+                      <Search className="h-4 w-4 mr-2" />
+                      Search
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Find Prediction</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter prediction ID"
-                className="flex-1"
-                value={predictionId}
-                onChange={(e) => setPredictionId(e.target.value)}
-              />
-              <Button type="submit" disabled={loading}>
-                {loading ? 'Searching...' : (
-                  <>
-                    <Search className="h-4 w-4 mr-2" />
-                    Find
-                  </>
-                )}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-      
-      <div className="flex justify-center items-center my-4">
-        {loading && <p className="text-blue-500">Loading data...</p>}
-        {!loading && predictionId && !results && <p className="text-red-500">No data found for ID: {predictionId}</p>}
-      </div>
-
-      {/* Recent Predictions Section */}
-      {recentPredictions.length > 0 && (
+        {/* Recent Predictions List */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Predictions</CardTitle>
+            <CardDescription>Your prediction history</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Rock Type</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentPredictions.map((prediction) => (
-                    <TableRow key={prediction.id}>
-                      <TableCell className="font-mono text-xs">
-                        {prediction.customId ? prediction.id : 
-                          `${prediction.id.substring(0, 8)}...${prediction.id.substring(prediction.id.length - 4)}`}
-                      </TableCell>
-                      <TableCell>{prediction.rockType}</TableCell>
-                      <TableCell>
-                        {new Date(prediction.timestamp).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => {
-                            setPredictionId(prediction.id);
-                            handleFetch(prediction.id);
-                          }}
-                        >
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            {renderPredictionHistory()}
           </CardContent>
         </Card>
-      )}
 
-      {/* Prediction Results Display */}
-      {results && (
-        <div className="space-y-6">
-          {/* ID Reference Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex justify-between items-center">
-                <span>Prediction ID</span>
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleEditPrediction()}
-                  >
-                    <Pencil className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  >
-                    <Trash className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={copyIdToClipboard}
-                  >
-                    <Copy className="h-4 w-4 mr-1" />
-                    Copy ID
-                  </Button>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-muted p-4 rounded-md">
-                <p className="font-mono break-all">{predictionId}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex justify-end mb-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline"
-                  onClick={() => exportData(userSettings.dataExportFormat)}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Data
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => exportData('json')}>
-                  Export as JSON
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportData('csv')}>
-                  Export as CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportData('excel')}>
-                  Export as Excel
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          
-          {/* Input Parameters Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Input Parameters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                // This IIFE helps us use complex logic in JSX
-                const inputData = results?.input_data || results as Record<string, any>;
-                
-                if (!inputData || typeof inputData !== 'object') {
-                  return <p className="text-red-500">No input data available</p>;
-                }
-                
-                return (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Parameter</TableHead>
-                          <TableHead>Value</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {Object.entries(inputData)
-                          .filter(([key]) => {
-                            // Fields to exclude from input parameters
-                            const excludedFields = [
-                              '_id', 
-                              'id',
-                              'Powder_Factor',
-                              'Powder_Factor (kg/m³)',
-                              'Fragmentation_Size (cm)',
-                              'Vibration_Level (dB)',
-                              'Noise_Level (dB)',
-                              'Blasting_Cost ($/tonne)'
-                            ];
-                            
-                            // Also exclude any key that contains "SVR", "XGBoost", or "RandomForest"
-                            const isPredictionModel = key.includes('SVR') || 
-                                                     key.includes('XGBoost') || 
-                                                     key.includes('RandomForest');
-                            
-                            // Return true to keep, false to filter out
-                            return !excludedFields.includes(key) && !isPredictionModel;
-                          })
-                          .map(([key, value]) => (
-                            <TableRow key={key}>
-                              <TableCell className="font-medium">{key}</TableCell>
-                              <TableCell>
-                                {typeof value === 'number' ? value.toString() : 
-                                 value === null ? 'N/A' : 
-                                 typeof value === 'object' ? JSON.stringify(value) : 
-                                 String(value)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
-
-          {/* Prediction Results Card */}
+        {/* Prediction Results */}
+        {results && (
           <Card>
             <CardHeader>
               <CardTitle>Prediction Results</CardTitle>
             </CardHeader>
             <CardContent>
-              {(() => {
-                // Check all possible locations for prediction data based on API response structure
-                const predictions = results?.predictions || 
-                                  (results?.result && (results.result as any).predictions) ||
-                                  {};
-                
-                // If predictions are embedded in the input_data
-                const inputData = results?.input_data || results as Record<string, any>;
-                const predictionFields = ['Fragmentation_Size (cm)', 'Vibration_Level (dB)', 'Noise_Level (dB)', 'Powder_Factor'];
-                
-                // Construct prediction data manually if needed
-                const manualPredictions: Record<string, { SVR: number; XGBoost: number; 'Random Forest': number }> = {};
-                let foundManualPredictions = false;
-                
-                predictionFields.forEach(field => {
-                  // Look for SVR, XGBoost, RandomForest variants
-                  const svr = inputData[`SVR_${field}`] || inputData[`${field}_SVR`];
-                  const xgboost = inputData[`XGBoost_${field}`] || inputData[`${field}_XGBoost`];
-                  const randomForest = inputData[`RandomForest_${field}`] || inputData[`${field}_RandomForest`];
-                  
-                  if (svr !== undefined || xgboost !== undefined || randomForest !== undefined) {
-                    foundManualPredictions = true;
-                    manualPredictions[field] = {
-                      "SVR": svr !== undefined ? parseFloat(svr) : 0,
-                      "XGBoost": xgboost !== undefined ? parseFloat(xgboost) : 0,
-                      "Random Forest": randomForest !== undefined ? parseFloat(randomForest) : 0
-                    };
-                  }
-                });
-                
-                // Use manual predictions if found and no structured predictions exist
-                const predictionData = Object.keys(predictions).length > 0 ? 
-                                      predictions : 
-                                      (foundManualPredictions ? manualPredictions : null);
-                
-                if (!predictionData) {
-                  // Add more diagnostic info
-                  console.error("No prediction data found in:", results);
-                  return (
-                    <div className="space-y-4">
-                      <p className="text-amber-500">No prediction results found in the API response.</p>
-                      <p className="text-sm text-muted-foreground">
-                        The API response may not include prediction data in the expected format.
-                      </p>
+              {/* Your existing results display */}
+              <div className="space-y-6">
+                {/* ID Reference Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex justify-between items-center">
+                      <span>Prediction ID</span>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleEditPrediction()}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          size="sm"
+                          onClick={() => setShowDeleteConfirm(true)}
+                        >
+                          <Trash className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={copyIdToClipboard}
+                        >
+                          <Copy className="h-4 w-4 mr-1" />
+                          Copy ID
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="bg-muted p-4 rounded-md">
+                      <p className="font-mono break-all">{predictionId}</p>
                     </div>
-                  );
-                }
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end mb-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="outline"
+                        onClick={() => exportData(userSettings.dataExportFormat)}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Data
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onClick={() => exportData('json')}>
+                        Export as JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportData('csv')}>
+                        Export as CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportData('excel')}>
+                        Export as Excel
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 
-                return (
-                  <div className="space-y-6">
-                    {Object.entries(predictionData).map(([metric, models]) => {
-                      // Skip if not an object with model predictions
-                      if (typeof models !== 'object' || models === null) return null;
+                {/* Input Parameters Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Input Parameters</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      // This IIFE helps us use complex logic in JSX
+                      const inputData = results?.input_data || results as Record<string, any>;
+                      
+                      if (!inputData || typeof inputData !== 'object') {
+                        return <p className="text-red-500">No input data available</p>;
+                      }
                       
                       return (
-                        <div key={metric} className="space-y-2">
-                          <h3 className="font-semibold">{metric}</h3>
+                        <div className="rounded-md border">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Model</TableHead>
-                                <TableHead className="text-right">Prediction</TableHead>
+                                <TableHead>Parameter</TableHead>
+                                <TableHead>Value</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {Object.entries(models as Record<string, any>).map(([model, value]) => (
-                                <TableRow key={model}>
-                                  <TableCell>{model}</TableCell>
-                                  <TableCell className="text-right">
-                                    {typeof value === 'number' ? value.toFixed(2) : String(value)}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {Object.entries(inputData)
+                                .filter(([key]) => {
+                                  // Fields to exclude from input parameters
+                                  const excludedFields = [
+                                    '_id', 
+                                    'id',
+                                    'Powder_Factor',
+                                    'Powder_Factor (kg/m³)',
+                                    'Fragmentation_Size (cm)',
+                                    'Vibration_Level (dB)',
+                                    'Noise_Level (dB)',
+                                    'Blasting_Cost ($/tonne)'
+                                  ];
+                                  
+                                  // Also exclude any key that contains "SVR", "XGBoost", or "RandomForest"
+                                  const isPredictionModel = key.includes('SVR') || 
+                                                          key.includes('XGBoost') || 
+                                                          key.includes('RandomForest');
+                                  
+                                  // Return true to keep, false to filter out
+                                  return !excludedFields.includes(key) && !isPredictionModel;
+                                })
+                                .map(([key, value]) => (
+                                  <TableRow key={key}>
+                                    <TableCell className="font-medium">{key}</TableCell>
+                                    <TableCell>
+                                      {typeof value === 'number' ? value.toString() : 
+                                      value === null ? 'N/A' : 
+                                      typeof value === 'object' ? JSON.stringify(value) : 
+                                      String(value)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
                             </TableBody>
                           </Table>
                         </div>
                       );
-                    })}
-                  </div>
-                );
-              })()}
+                    })()}
+                  </CardContent>
+                </Card>
+
+                {/* Prediction Results Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Prediction Results</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      // Check all possible locations for prediction data based on API response structure
+                      const predictions = results?.predictions || 
+                                        (results?.result && (results.result as any).predictions) ||
+                                        {};
+                      
+                      // If predictions are embedded in the input_data
+                      const inputData = results?.input_data || results as Record<string, any>;
+                      const predictionFields = ['Fragmentation_Size (cm)', 'Vibration_Level (dB)', 'Noise_Level (dB)', 'Powder_Factor'];
+                      
+                      // Construct prediction data manually if needed
+                      const manualPredictions: Record<string, { SVR: number; XGBoost: number; 'Random Forest': number }> = {};
+                      let foundManualPredictions = false;
+                      
+                      predictionFields.forEach(field => {
+                        // Look for SVR, XGBoost, RandomForest variants
+                        const svr = inputData[`SVR_${field}`] || inputData[`${field}_SVR`];
+                        const xgboost = inputData[`XGBoost_${field}`] || inputData[`${field}_XGBoost`];
+                        const randomForest = inputData[`RandomForest_${field}`] || inputData[`${field}_RandomForest`];
+                        
+                        if (svr !== undefined || xgboost !== undefined || randomForest !== undefined) {
+                          foundManualPredictions = true;
+                          manualPredictions[field] = {
+                            "SVR": svr !== undefined ? parseFloat(svr) : 0,
+                            "XGBoost": xgboost !== undefined ? parseFloat(xgboost) : 0,
+                            "Random Forest": randomForest !== undefined ? parseFloat(randomForest) : 0
+                          };
+                        }
+                      });
+                      
+                      // Use manual predictions if found and no structured predictions exist
+                      const predictionData = Object.keys(predictions).length > 0 ? 
+                                            predictions : 
+                                            (foundManualPredictions ? manualPredictions : null);
+                      
+                      if (!predictionData) {
+                        // Add more diagnostic info
+                        console.error("No prediction data found in:", results);
+                        return (
+                          <div className="space-y-4">
+                            <p className="text-amber-500">No prediction results found in the API response.</p>
+                            <p className="text-sm text-muted-foreground">
+                              The API response may not include prediction data in the expected format.
+                            </p>
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <div className="space-y-6">
+                          {Object.entries(predictionData).map(([metric, models]) => {
+                            // Skip if not an object with model predictions
+                            if (typeof models !== 'object' || models === null) return null;
+                            
+                            return (
+                              <div key={metric} className="space-y-2">
+                                <h3 className="font-semibold">{metric}</h3>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Model</TableHead>
+                                      <TableHead className="text-right">Prediction</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {Object.entries(models as Record<string, any>).map(([model, value]) => (
+                                      <TableRow key={model}>
+                                        <TableCell>{model}</TableCell>
+                                        <TableCell className="text-right">
+                                          {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </div>
             </CardContent>
           </Card>
-        </div>
-      )}
-      
+        )}
+      </div>
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
